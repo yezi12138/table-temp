@@ -1,0 +1,203 @@
+/* eslint-disable */
+import { clone, merge } from '@/utils/obj-operation'
+import { Table } from 'element-ui'
+import Vue from 'vue'
+
+function init(config) {
+  let cloneConfig = null
+  if (typeof config.fetchUrl === 'undefined' && config.page) {
+    cloneConfig = clone(config)
+    splitData()
+  } else {
+    cloneConfig = merge(config, cloneConfig)
+  }
+  return cloneConfig
+}
+
+var column = (h, column, index, context) => {
+  return (
+    <el-table-column
+      class="column"
+      label={column.label}
+      prop={column.prop}
+      align={column.align || 'center'}
+      min-width={column.minWidth || 120}
+      width={column.width}
+      fixed={column.fixed}
+      show-overflow-tooltip
+      filters={column.filters}
+      filter-method={column.filterMethod}
+      sortable={column.sortable || false}
+      {...{
+        scopedSlots: {
+          default: function (scope) {
+            console.log(123)
+            var render = context.data.scopedSlots[column.slot]
+            return typeof render === 'function' ? (
+              render(scope)
+            ) : (
+              <span
+                style={
+                  column.style
+                    ? typeof column.style === 'function'
+                      ? column.style(clone(scope.row))
+                      : column.style
+                    : {}
+                }
+              >
+                {typeof column.formatter === 'function'
+                  ? column.formatter(
+                      scope.row,
+                      scope.column,
+                      scope.row[column.prop],
+                      index
+                    )
+                  : scope.row[column.prop]}
+              </span>
+            )
+          }
+        }
+      }}
+    />
+  )
+}
+
+var selectionColumn = h => {
+  return <el-table-column type="selection" align="center" width="55" />
+}
+
+var indexColumn = h => {
+  return <el-table-column type="index" align="center" width="55" />
+}
+
+var operationColumn = (h, context, cloneConfig) => {
+  return (
+    <el-table-column
+      align="center"
+      fixed={cloneConfig.operation.fixed || 'right'}
+      label={cloneConfig.operation.label || '操作'}
+      min-width={cloneConfig.operation.minWidth || 150}
+      width={cloneConfig.operation.width}
+      {...{
+        scopedSlots: {
+          default: function (scope) {
+            var render = context.data.scopedSlots.btn
+            return typeof render === 'function'
+              ? render(scope)
+              : cloneConfig.operation.btns.map(item => {
+                  return (
+                    <el-button
+                      style={{
+                        display:
+                          (item.show === 'function' && item.show(scope.row)) ||
+                          item.show === undefined
+                            ? 'inline-block'
+                            : 'none'
+                      }}
+                      disabled={
+                        item.disabled
+                          ? typeof item.disabled === 'function'
+                            ? item.disabled(scope.row)
+                            : item.disabled === false
+                            ? false
+                            : true
+                          : false
+                      }
+                      size={item.size || 'mini'}
+                      type={item.type || 'text'}
+                      onClick={item.fn.bind(item, scope.row)}
+                    >
+                      {item.href ? (
+                        <a
+                          href={item.href}
+                          style={
+                            typeof item.style === 'function'
+                              ? item.style(scope.row)
+                              : item.style
+                          }
+                        >
+                          {typeof item.label === 'function'
+                            ? item.label(scope.row)
+                            : item.label}
+                        </a>
+                      ) : (
+                        <span
+                          style={
+                            typeof item.style === 'function'
+                              ? item.style(scope.row)
+                              : item.style
+                          }
+                        >
+                          {typeof item.label === 'function'
+                            ? item.label(scope.row)
+                            : item.label}
+                        </span>
+                      )}
+                    </el-button>
+                  )
+                })
+          }
+        }
+      }}
+    />
+  )
+}
+
+var expandColumn = (h, context) => {
+  return (
+    <el-table-column
+      type="expand"
+      {...{
+        scopedSlots: {
+          default: function (scope) {
+            var render = context.data.scopedSlots.expand
+            return typeof render === 'function' ? (
+              render(scope)
+            ) : (
+              <p>不存在对应expand插槽</p>
+            )
+          }
+        }
+      }}
+    />
+  )
+}
+
+var createTable = (h, context) => {
+  let data = context.data
+  let props = context.props
+  let cloneConfig = init(props.config || {})
+  // 表格参数默认值
+  props.border = props.border ? props.border : cloneConfig.expand ? false : true
+  props.stripe = props.stripe ? props.stripe : true
+  props.size = props.size ? props.size : 'small'
+  data.attrs.loadingText = data.attrs.loadingText
+    ? data.attrs.loadingText
+    : '正在加载表格数据'
+  console.log({ ...{ ...data, props } }, cloneConfig.selection)
+  return (
+    <el-table class="farm-table-temp" {...{ ...data, props }}>
+      {cloneConfig.selection && selectionColumn(h)}
+      {cloneConfig.index && indexColumn(h)}}
+      {cloneConfig.expand && expandColumn(h, context)}}
+      {cloneConfig.tableSetting.map((item, index) => {
+        return column(h, item, index, context)
+      })}
+      {cloneConfig.operation && operationColumn(h, context, cloneConfig)}
+    </el-table>
+  )
+}
+
+export default Vue.component('table-temp', {
+  functional: true,
+  props: {
+    config: {
+      type: Object,
+      require: true
+    },
+    ...Table.props
+  },
+  render: function(h, context) {
+    return <div class="table-temp">{createTable(h, context)}</div>
+  }
+})

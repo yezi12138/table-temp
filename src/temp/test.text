@@ -1,0 +1,386 @@
+/* eslint-disable */
+import { clone, merge } from '@/utils/obj-operation'
+import { Table } from 'element-ui'
+import Vue from 'vue'
+
+const methods = {
+  getLayout() {
+    if (this.cloneConfig.page && this.cloneConfig.page.pageSizes) {
+      this.layout = 'sizes, ' + this.layout
+    }
+    if (
+      this.cloneConfig.page &&
+      (this.cloneConfig.page.total === 0 || this.cloneConfig.page.total)
+    ) {
+      this.layout = 'total, ' + this.layout
+    }
+  },
+  handleSelectionChange(cloneConfig, selection) {
+    this.$emit('selection-change', selection)
+  },
+  handleSizeChange(cloneConfig, index) {
+    if (cloneConfig.page) {
+      cloneConfig.page.pageSize = index
+      cloneConfig.page.pageIndex = 1
+      isSizeOrIndexChange = true
+    }
+    if (cloneConfig.fetchUrl !== 'undefined') {
+      this.fetch()
+    } else {
+      this.splitData()
+    }
+  },
+  handleCurrentChange(cloneConfig, index) {
+    if (cloneConfig.page) {
+      cloneConfig.page.pageIndex = index
+      isSizeOrIndexChange = true
+    }
+    if (cloneConfig.fetchUrl !== 'undefined') {
+      this.fetch()
+    } else {
+      this.splitData()
+    }
+  },
+  // 请求表格的方法
+  fetch() {
+    if (!this.cloneConfig.fetchUrl) {
+      console.log('%c没有fetchUrl，请检查', 'color: red')
+      return
+    }
+    try {
+      if (this.cloneConfig.resetIndex) {
+        this.resetIndex()
+      }
+      let postData = {
+        ...this.cloneConfig.condition
+      }
+      if (this.cloneConfig.page) {
+        let size = 'pageSize'
+        let index = 'pageIndex'
+        if (this.cloneConfig.page.map) {
+          size = this.cloneConfig.page.map.size || 'pageSize'
+          index = this.cloneConfig.page.map.index || 'pageIndex'
+        }
+        postData[size] = this.cloneConfig.page.pageSize || 15
+        postData[index] = this.cloneConfig.page.pageIndex || 1
+      }
+
+      this.innerLoading = true
+      this.$emit('update:loading', true)
+      let promise = this.$http(this.config.fetchUrl, postData)
+      console.log('postData', postData)
+      promise
+        .then(
+          data => {
+            // 保存结果
+            this.responseData = data
+            let tableData = this.dataMap(data, this.cloneConfig.map.data) || []
+            // 数据处理函数, 传入请求返回的数据，输出处理后的数组
+            if (this.cloneConfig.dataProcess) {
+              tableData = this.cloneConfig.dataProcess(tableData)
+            }
+            // todo merge合并之后，作用于为cloneConfig，直接覆盖会使config无法响应
+            this.cloneConfig.tableData = tableData
+            this.config.tableData = tableData
+            if (this.config.page) {
+              if (
+                this.config.page.total === 0 ? true : this.config.page.total
+              ) {
+                let total = this.dataMap(data, this.cloneConfig.map.total) || 0
+                this.cloneConfig.page &&
+                  this.$set(this.cloneConfig.page, 'total', total)
+              }
+            }
+          },
+          data => {
+            this.clearData()
+          }
+        )
+        .finally(() => {
+          this.$emit('afterFetch', this.responseData)
+          this.$emit('update:loading', false)
+          this.innerLoading = false
+        })
+    } catch (e) {
+      this.innerLoading = false
+      this.$emit('update:loading', false)
+      console.log('%c%s', 'color: red', e)
+    }
+  },
+  clearData() {
+    this.cloneConfig.tableData = []
+    this.cloneConfig.page &&
+      (this.cloneConfig.page.pageIndex = 1) &&
+      (this.cloneConfig.page.total = 0)
+  },
+  dataMap(resData, map) {
+    try {
+      let mapArr = map.split('.')
+      let data = clone(resData)
+      while (mapArr.length > 0) {
+        data = data[mapArr.shift()]
+      }
+      return data
+    } catch (e) {
+      console.log('数据映射出错%c%s', 'color: red', e)
+    }
+  },
+  rowClick(row, event, column) {
+    this.$emit('row-click', row, event, column)
+  },
+  expandChange(row, expandedRows) {
+    this.$emit('expand-change', row, expandedRows)
+  },
+  resetIndex() {
+    // 重置页码为1
+    if (this.cloneConfig.page && !this.isSizeOrIndexChange) {
+      this.$set(this.cloneConfig.page, 'pageIndex', 1)
+      this.isSizeOrIndexChange = false
+    } else {
+      this.isSizeOrIndexChange = false
+    }
+  },
+  getMaxHeight() {
+    let tableTempWrap = this.$refs.tableTempWrap
+    let reportNav = this.$refs.reportNav
+    this.clientMaxHeight =
+      tableTempWrap.clientHeight - (reportNav ? reportNav.offsetHeight : 0)
+  },
+  splitData() {
+    let index = this.cloneConfig.page ? this.cloneConfig.page.pageIndex || 1 : 1
+    let size = this.cloneConfig.page ? this.cloneConfig.page.pageSize || 15 : 15
+    let last =
+      this.config.tableData.length > size ? size : this.config.tableData.length
+    this.cloneConfig.tableData = this.config.tableData.slice(
+      (index - 1) * size,
+      (index - 1) * size + last
+    )
+    if (this.config.page) {
+      this.cloneConfig.page.total = this.config.tableData.length
+    }
+  },
+  init(config) {
+    let cloneConfig = null
+    if (typeof config.fetchUrl === 'undefined' && config.page) {
+      cloneConfig = clone(config)
+      splitData()
+    } else {
+      cloneConfig = merge(config, cloneConfig)
+    }
+    return cloneConfig
+  }
+}
+
+var column = (h, column, index, context) => {
+  const slotScope = {
+    scopedSlots: {
+      default: function(scope) {
+        var render = context.$scopedSlots[column.slot]
+        return typeof render === 'function' ? (
+          render(scope)
+        ) : (
+          <span
+            style={
+              column.style
+                ? typeof column.style === 'function'
+                  ? column.style(scope.row)
+                  : column.style
+                : {}
+            }
+          >
+            {typeof column.formatter === 'function'
+              ? column.formatter(
+                  scope.row,
+                  scope.column,
+                  scope.row[column.prop],
+                  index
+                )
+              : scope.row[column.prop]}
+          </span>
+        )
+      }
+    }
+  }
+  return (
+    <el-table-column
+      class="column"
+      key={index}
+      label={column.label}
+      prop={column.prop}
+      align={column.align || 'center'}
+      min-width={column.minWidth || 120}
+      width={column.width}
+      fixed={column.fixed}
+      show-overflow-tooltip
+      filters={column.filters}
+      filter-method={column.filterMethod}
+      sortable={column.sortable || false}
+      {...slotScope}
+    />
+  )
+}
+
+var selectionColumn = h => {
+  return <el-table-column type="selection" align="center" width="55" />
+}
+
+var indexColumn = h => {
+  return <el-table-column type="index" align="center" width="55" />
+}
+
+var operationColumn = (h, context, cloneConfig) => {
+  const slotScope = {
+    scopedSlots: {
+      default: function(scope) {
+        var render = context.$scopedSlots.btn
+        return typeof render === 'function'
+          ? render(scope)
+          : cloneConfig.operation.btns.map(item => {
+              return (
+                <el-button
+                  style={{
+                    display:
+                      typeof item.show === 'function' && !item.show(scope.row)
+                        ? 'none'
+                        : 'inline-block'
+                  }}
+                  disabled={
+                    item.disabled
+                      ? typeof item.disabled === 'function'
+                        ? item.disabled(scope.row)
+                        : item.disabled === false
+                        ? false
+                        : true
+                      : false
+                  }
+                  size={item.size || 'mini'}
+                  type={item.type || 'text'}
+                  nativeOnClick={item.fn.bind(item, scope.row)}
+                >
+                  {item.href ? (
+                    <a
+                      href={item.href}
+                      style={
+                        typeof item.style === 'function'
+                          ? item.style(scope.row)
+                          : item.style
+                      }
+                    >
+                      {typeof item.label === 'function'
+                        ? item.label(scope.row)
+                        : item.label}
+                    </a>
+                  ) : (
+                    <span
+                      style={
+                        typeof item.style === 'function'
+                          ? item.style(scope.row)
+                          : item.style
+                      }
+                    >
+                      {typeof item.label === 'function'
+                        ? item.label(scope.row)
+                        : item.label}
+                    </span>
+                  )}
+                </el-button>
+              )
+            })
+      }
+    }
+  }
+  return (
+    <el-table-column
+      align="center"
+      fixed={cloneConfig.operation.fixed || 'right'}
+      label={cloneConfig.operation.label || '操作'}
+      min-width={cloneConfig.operation.minWidth || 150}
+      width={cloneConfig.operation.width}
+      {...slotScope}
+    />
+  )
+}
+
+var expandColumn = (h, context) => {
+  return (
+    <el-table-column
+      type="expand"
+      {...{
+        scopedSlots: {
+          default: function(scope) {
+            var render = context.$scopedSlots.expand
+            return typeof render === 'function' ? (
+              render(scope)
+            ) : (
+              <p>不存在对应expand插槽</p>
+            )
+          }
+        }
+      }}
+    />
+  )
+}
+
+var pagination = (h, cloneConfig) => {
+  console.log('pagination', methods, cloneConfig)
+  return (
+    <div class="report-nav">
+      <el-pagination
+        onSizeChange={methods.handleSizeChange}
+        onCurrentChange={methods.handleCurrentChange}
+        currentPage={cloneConfig.page.pageIndex}
+        onUpdatePage={val => {
+          cloneConfig.page.pageIndex = val
+        }}
+        page-size={cloneConfig.page.pageSize}
+        page-sizes={cloneConfig.page.pageSizes}
+        layout='layout'
+        total={cloneConfig.page.total}
+      />
+    </div>
+  )
+}
+
+var table = (h, context, cloneConfig) => {
+  let data = context.$attrs
+  let props = context.$options.propsData
+  return (
+    <el-table class="farm-table-temp" {...{ data, props }}>
+      {cloneConfig.selection && selectionColumn(h)}
+      {cloneConfig.index && indexColumn(h)}}
+      {cloneConfig.expand && expandColumn(h, context)}}
+      {cloneConfig.tableSetting.map((item, index) => {
+        return column(h, item, index, context)
+      })}
+      {cloneConfig.operation && operationColumn(h, context, cloneConfig)}
+    </el-table>
+  )
+}
+
+export default Vue.component('table-temp', {
+  props: {
+    config: {
+      type: Object,
+      require: true
+    },
+    ...Table.props
+  },
+  render(h) {
+    console.log(this)
+    var context = this
+    let data = context.$attrs
+    let props = context.$options.propsData
+    let cloneConfig = methods.init(props.config || {})
+    // 表格参数默认值
+    props.border = props.border ? props.border : cloneConfig.expand ? false : true
+    props.stripe = props.stripe ? props.stripe : true
+    props.size = props.size ? props.size : 'small'
+    data.loadingText = data.loadingText ? data.loadingText : '正在加载表格数据'
+    return (
+      <div class="table-temp">
+        {table(h, context, cloneConfig)}
+        {cloneConfig.page && pagination(h, cloneConfig)}
+      </div>
+    )
+  }
+})
